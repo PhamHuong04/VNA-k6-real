@@ -10,11 +10,20 @@ const signedTxs = new SharedArray("signed transactions", function () {
 
 export const options = {
   scenarios: {
-    send_txs: {
-      executor: "shared-iterations",
-      vus: 20, // Tăng số lượng VU lên chút để bắn nhanh hơn
-      iterations: signedTxs.length, // k6 sẽ tự động chạy đủ 10,000 lần (100 ví * 100 tx)
-      maxDuration: "5m",
+    ramping_rate_test: {
+      executor: "ramping-arrival-rate",
+      startRate: 0, // Bắt đầu từ 0 TPS
+      timeUnit: "1s", // Đơn vị tính là giây
+
+      preAllocatedVUs: 10,
+      maxVUs: 100, // Cho phép tối đa 50 VUs nếu cần thiết
+
+      stages: [
+        { target: 100, duration: "3m" }, // Tăng từ 0 lên 1 TPS trong 10s
+        { target: 100, duration: "5m" }, // Giữ đều 1 TPS trong 1 phút (Yêu cầu của bạn)
+        { target: 200, duration: "5m" }, // Sau đó tăng tốc lên 10 TPS
+        { target: 0, duration: "3m" }, // Giảm về 0
+      ],
     },
   },
 };
@@ -22,7 +31,7 @@ export const options = {
 const BASE_URL = "https://rpc.sotatek.works"; // URL RPC của bạn
 
 export default function () {
-  console.log(`👷 VU số ${__VU} đang gửi giao dịch thứ ${__ITER}...`);
+  //   console.log(`👷 VU số ${__VU} đang gửi giao dịch thứ ${__ITER}...`);
   // Lấy đúng hàng dựa trên số thứ tự thực thi
   const currentTxIndex = scenario.iterationInTest;
 
