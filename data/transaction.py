@@ -28,8 +28,8 @@ config = load_config(CONFIG_FILE)
 
 BESU_NODE_URL = config['basuNodeUrl']
 INPUT_FILE = 'data/test_keys.csv' # File chứa Private Key của các ví đã có tiền
-AMOUNT_TO_TRANSFER_ETH = 0.00001 
-TRANSACTIONS_PER_ACCOUNT = 5  # Số giao dịch mỗi ví sẽ thực hiện
+AMOUNT_TO_TRANSFER_ETH = 0.000001 
+TRANSACTIONS_PER_ACCOUNT = 200  # Số giao dịch mỗi ví sẽ thực hiện
 
 # --- Khởi tạo Web3 ---
 w3 = Web3(Web3.HTTPProvider(BESU_NODE_URL))
