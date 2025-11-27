@@ -1,5 +1,6 @@
 from web3 import Web3
 import csv
+import random
 
 # --- Cấu hình ---
 BESU_NODE_URL = "https://rpc.sotatek.works" # URL từ MetaMask của bạn
@@ -9,12 +10,12 @@ OUTPUT_FILE = 'data/signed_transactions_bulk.csv'
 # Địa chỉ nhận (nhớ checksum)
 RAW_RECEIVER = "0x85c06471d71b5609c40c170bec58d6efddf7c572" 
 AMOUNT = 0.000001
-TX_PER_ACCOUNT = 1000 # <--- SỐ LƯỢNG GIAO DỊCH MUỐN GỬI MỖI VÍ
+TX_PER_ACCOUNT = 100 # <--- SỐ LƯỢNG GIAO DỊCH MUỐN GỬI MỖI VÍ
 
 w3 = Web3(Web3.HTTPProvider(BESU_NODE_URL))
 
 def generate_bulk_signed_txs():
-    receiver_address = w3.to_checksum_address(RAW_RECEIVER)
+    # receiver_address = w3.to_checksum_address(RAW_RECEIVER) # This is no longer needed as receiver will be random
 
     accounts = []
     with open(INPUT_FILE, 'r') as f:
@@ -22,44 +23,59 @@ def generate_bulk_signed_txs():
         for row in reader:
             accounts.append(row)
 
-    total_tx_expect = len(accounts) * TX_PER_ACCOUNT
-    print(f"🔄 Đang chuẩn bị {total_tx_expect} giao dịch (Mỗi ví {TX_PER_ACCOUNT} Tx)...")
+    # 1. Khởi tạo nonce tracker cho từng ví
+    nonce_tracker = {}
+    print("Dang lay nonce khoi diem cho tat ca cac vi...")
+    for acc in accounts:
+        sender_address = w3.to_checksum_address(acc['Address'])
+        nonce_tracker[sender_address] = w3.eth.get_transaction_count(sender_address)
+
+    # 2. Tạo pool người gửi (mỗi người gửi xuất hiện TX_PER_ACCOUNT lần)
+    sender_pool = []
+    for acc in accounts:
+        sender_pool.extend([acc] * TX_PER_ACCOUNT)
+    
+    # 3. Xáo trộn thứ tự người gửi
+    random.shuffle(sender_pool) 
+
+    total_tx_expect = len(sender_pool)
+    print(f"Dang chuan bi {total_tx_expect} giao dich (Ngau nhien hoa nguoi gui va nguoi nhan)...")
     
     signed_data = []
     chain_id = w3.eth.chain_id
     gas_price = w3.eth.gas_price
 
-    for i, acc in enumerate(accounts):
-        private_key = acc['PrivateKey']
-        sender_address = w3.to_checksum_address(acc['Address'])
+    for i, sender_acc in enumerate(sender_pool):
+        private_key = sender_acc['PrivateKey']
+        sender_address = w3.to_checksum_address(sender_acc['Address'])
         
-        # 1. Lấy Nonce khởi điểm của ví trên mạng lưới
-        start_nonce = w3.eth.get_transaction_count(sender_address)
-        
-        # 2. Vòng lặp tạo 100 giao dịch cho ví này
-        for j in range(TX_PER_ACCOUNT):
-            # Tính toán nonce cho giao dịch thứ j
-            current_nonce = start_nonce + j 
-            
-            tx = {
-                'nonce': current_nonce, # <--- QUAN TRỌNG NHẤT
-                'to': receiver_address,
-                'value': w3.to_wei(AMOUNT, 'ether'),
-                'gas': 21000,
-                'gasPrice': gas_price,
-                'chainId': chain_id
-            }
-            
-            try:
-                signed_tx = w3.eth.account.sign_transaction(tx, private_key)
-                raw_tx_hex = w3.to_hex(signed_tx.raw_transaction)
-                signed_data.append(raw_tx_hex)
-            except Exception as e:
-                print(f"❌ Lỗi tạo Tx {j} cho ví {sender_address}: {e}")
+        # Chọn ngẫu nhiên người nhận từ danh sách accounts
+        receiver_acc = random.choice(accounts)
+        receiver_address = w3.to_checksum_address(receiver_acc['Address'])
 
-        # In tiến độ để đỡ sốt ruột
-        if (i + 1) % 10 == 0:
-            print(f"   -> Đã xử lý xong {i + 1}/{len(accounts)} ví...")
+        # Lấy nonce hiện tại từ tracker và tăng lên
+        current_nonce = nonce_tracker[sender_address]
+        nonce_tracker[sender_address] += 1
+            
+        tx = {
+            'nonce': current_nonce,
+            'to': receiver_address,
+            'value': w3.to_wei(AMOUNT, 'ether'),
+            'gas': 21000,
+            'gasPrice': gas_price,
+            'chainId': chain_id
+        }
+        
+        try:
+            signed_tx = w3.eth.account.sign_transaction(tx, private_key)
+            raw_tx_hex = w3.to_hex(signed_tx.raw_transaction)
+            signed_data.append(raw_tx_hex)
+        except Exception as e:
+            print(f"Loi tao Tx {i} tu {sender_address}: {e}")
+
+        # In tiến độ
+        if (i + 1) % 100 == 0:
+            print(f"   -> Đã xử lý xong {i + 1}/{total_tx_expect} giao dịch...")
 
     # Lưu tất cả vào file CSV
     with open(OUTPUT_FILE, 'w', newline='') as f:
